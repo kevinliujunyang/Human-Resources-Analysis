@@ -1,0 +1,360 @@
+---
+title: "Human Resources Dataset Analysis"
+subtitle: "MATH 257 GROUP PROJECT"
+author: "Zhengxia Yi, Miyetani Chauke, Ray Chen, Qiaoqiao Jiang, and Junyang Liu"
+date: "5/25/2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+#**Project Background**
+
+  A successful company is normally created by a group of really talented people. Ideally, as company grows, more and more talented people will join the company. However, we also observe the common fact that as the company grows, more and more people leave the company for various reasons. In this project, we are interested in exploring the reasons and identifying the characteristics of the employee that left the company. Hopefully, we can use what we have discovered in this project to help companies better assess their employees and make sure really talented people grow with the company. 
+  
+##Data
+
+Our dataset is collected from Kaggle. The url of the dataset is provided here: 
+
+(https://www.kaggle.com/ludobenistant/hr-analytics)
+
+The description of the dataset is down below. Dataset description:
+
+* *satisfaction_level* : Employee satisfaction level for the company
+* *last_evaluation* : Most recent employer satisfaction level for employee
+* *number_project* : Number of projects completed at work
+* *average_montly_hours* : Average hours at workplace in a month
+* *time_spend_company* : Number of years spent in the company
+* *Work_acciden* : Whether they have had a work accident
+* *left* : Whether the employee left the workplace or not
+* *promotion_last_5years* : Whether they have had a promotion in the last 5 years
+* *sales* : Department
+* *Salary* : level of salary
+
+##Goal
+
+The Goal of this project is to discover the patterns of people who left the company. What is influencing people leaving the company? we also want to focus on why good people leave, and verify our finding by applying the finding we obtain for prediction analysis and see how accurate our conclusion is. We believe our finding has important applications in the business world in terms of HR analytics, but is also applicable to customer churn and student retention. Hopefully, we can have better understanding of assessing our employee and keep good employees stay with company.
+
+#**Analysis**
+
+##Preliminary Data analysis
+
+Before we dive into any specific analysis,let us get to know more about this dataset.The dataset tells us a lot of stories if we look closely. let's first take a look at the employee structure of the company.
+
+```{r incude= FALSE,echo=FALSE,fig.width=10, fig.height=5}
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(caret)
+```
+
+```{r,echo=FALSE,fig.width=10, fig.height=5}
+HR<-read.csv("HR_comma_sep.csv")
+HR$salary<-as.factor(HR$salary)
+HR$salary<-ordered(HR$salary,levels=c("low","medium","high"))
+ggplot(HR, aes(x=sales, fill= sales, geom="histogram"))+ geom_bar() +theme(axis.text.x = element_text(angle = 30, vjust = 0.5))+ggtitle("Company Headcount By Department")+labs(y= "Headcount", x = "Department")
+```
+
+From the Headcount histogram we can tell that *sales*, *technical*, and *support* department are the departments with most employees. 
+
+Now let's take a look the salary structure of employees in the company.
+ 
+```{r, echo=FALSE,fig.width=10, fig.height=5}
+HR$salary<-ordered(HR$salary,levels=c("low","medium","high"))
+ggplot(HR, aes(x= sales, fill=salary))+geom_bar()+ggtitle("Company Salary Distribution by Department and Headcount By Department")
+```
+
+From the Stacked chart above, we can see that *sales*, *support*, and *technical* department have lots of people earning low level salary. It might raise concerns when most employees of the company's top 3 biggest departments are earning low salary.
+  
+  
+```{r, echo=FALSE,fig.width=10, fig.height=5}
+HR$salary<-ordered(HR$salary,levels=c("low","medium","high"))
+ggplot(HR, aes(x= time_spend_company, fill=salary)) + geom_bar() + theme(axis.text.x = element_text(angle = 30, vjust = 0.5))+ggtitle("Company Salary Distribution and Headcount Over Time")
+```
+
+This stacked barchart shows the distribution and headcounts of the employee salary over time.we can see that most of employes are at their 3rd and 4th year of work. we are a little concered about employees with 3-4 years of experience who still earn low or medium salary. It means that perhaps they are not appreciated in the company or maybe too shy or scared to ask for a rise.
+
+Now, let's take a look at the employees who left the company. we want to know what is the characteristics of those people?let's find the confidence intervals for all the department proportions of those who left.
+
+A 95% CI's for department proportion of those who left is performed:
+
+```{r,echo=FALSE}
+#obtaining means and variances for each department
+HR<-read.csv("HR_comma_sep.csv")
+accident <- as.factor(HR$Work_accident)
+depart <- as.factor(HR$sales)
+salary <- as.factor(HR$salary)
+prom <- as.factor(HR$promotion_last_5years)
+depart.means <- aggregate(HR[, 7], list(HR$sales), mean)
+depart.var <- aggregate(HR[,7],list(HR$sales), var)
+mean.vec <- as.vector(depart.means[,2])
+var.vec <- as.vector(depart.var[,2])
+#obtaining observations for each department
+obs.acc      	<- sum((depart == "accounting"))
+obs.hr       	<- sum((depart == "hr"))
+obs.IT       	<- sum((depart == "IT"))
+obs.mng      	<- sum((depart == "management"))
+obs.market   	<- sum((depart == "marketing"))
+obs.pro_mng  	<- sum((depart == "product_mng"))
+obs.RnD      	<- sum((depart == "RandD"))
+obs.sale     	<- sum((depart == "sales"))
+obs.suppt    	<- sum((depart == "support"))
+obs.technical	<- sum((depart == "technical"))
+obs.vec <- as.numeric(c(obs.acc,obs.hr,obs.IT,obs.mng,obs.market,obs.pro_mng,obs.RnD,obs.sale,obs.suppt,obs.technical))
+#data frame of all CIs
+#vector for CI lower bounds
+CI.lb <- function(mu,sig,n) {
+  c(mu - qt(.05, n-1, lower.tail = F)*(sqrt(sig)/sqrt(n)))
+}
+ 
+all.ci.lb <- vector()
+ 
+for(i in 1:10){
+all.ci.lb[i] <- (CI.lb(mean.vec[i],var.vec[i],obs.vec[i]))
+}
+ 
+#vector for CI upper bounds
+CI.ub <- function(mu,sig,n) {
+  c(mu + qt(.05, n-1, lower.tail = F)*(sqrt(sig)/sqrt(n)))
+}
+ 
+all.ci.ub <- vector()
+ 
+for(i in 1:10){
+  all.ci.ub[i] <- (CI.ub(mean.vec[i],var.vec[i],obs.vec[i]))
+}
+ 
+#data frame of all CI's
+all.CIs <- cbind(all.ci.lb,all.ci.ub,mean.vec)
+rownames(all.CIs) <- c(levels(depart))
+colnames(all.CIs) <- c("lower", "upper", "mean")
+
+all.CIs
+```
+
+From the confidence intervals above we can see that although the ratio varies across departments, it stays very stay across different departments.
+
+```{r,echo=FALSE,fig.width=10, fig.height=5}
+boxplot(t(all.CIs[,c(1,2)]), main="Confidence Intervals by Department")
+```
+
+This graph provides the confidence intervals for the proportion of employees leaving for each department. Looking at the box plot and the data frame of confidence intervals, we see that the CI for department hr overlaps only with accounting, technical, and support.  This suggests that hr is statistically different from the rest of the departments at a 95% significance level.  We also see that management and RandD departments overlap only with each other, meaning that those two departments are statistically different from the rest of the departments at a 95% significance level.  
+
+```{r,echo=FALSE,fig.width=10, fig.height=5}
+ggplot(HR, aes(x =  salary, y = satisfaction_level, fill = factor(left))) + 
+geom_boxplot() + ylab("Satisfacion level")+ggtitle("Satisfaction Level Comparison of People Who Left vs Stayed by Salary Level")
+```
+
+From the Boxplot we can conclude that the people who left company have lower satisfaction level than the people who stayed in the company in general.
+
+```{r,echo=FALSE,fig.width=10, fig.height=5}
+ggplot(HR, aes(x =  salary, y = time_spend_company, fill = factor(left))) + 
+geom_boxplot() + xlab("Salary") + ylab("time_spend_company")+ggtitle("Comparison of People Who Left vs Stayed by Salary Level over Time")
+```
+
+From the boxplot we can conclude that people who left the company tend to spend more time with company. It is probably due to overtime.
+
+```{r, echo=FALSE,fig.width=10, fig.height=5}
+HR$salary<-ordered(HR$salary,levels=c("low","medium","high"))
+hr_hist <- HR[which(HR$left ==1),]
+ggplot(hr_hist, aes(x=satisfaction_level, fill=salary))+geom_histogram(bins = 6)+ggtitle(" Salary Distribution of Left Employees by Satisfaction Level and Headcount")
+```
+
+From the staced barchart above, we can see a lot of people who left the company when they are paid with low or midium salary. Furthermore, it shows that a lot of emmployees left they company when their satisfaction level was low. It also shows that employees rarely left the company if they are very satisfied with the comapany or have high salary.
+
+```{r,echo=FALSE,fig.width=10, fig.height=5}
+ggplot(hr_hist, aes(x= last_evaluation, fill=salary))+geom_histogram(bins = 8)+ggtitle("Salary Distribution of Left Employees by Last evaluation and Headcount")
+```
+
+From the stacked barchart above, we can see many people who did perform very well and earned medium or low salary left the company. However, we see there are also a lot of top performers that earned medium or low salary left the company too. It is worth to note that salary might be a driver for their departure.
+
+```{r,echo=FALSE,fig.width=10, fig.height=5}
+ggplot(hr_hist, aes(x= average_montly_hours, fill=salary))+geom_histogram(bins = 10)+ggtitle(" Salary Distribution of Left Employees by Average Monthly Working Hours and Headcount")
+```
+
+From the stacked bar chart above, we can see the mixed pattern.A lot of low salary employees who worked either more than average or less than average left company. It can imply that the one who falls into the first group worked over time and didn't get compensation properly. 
+
+We know that companies don't want to retain everybody. Some people don't work well as we can see from their evaluation, but clearly there are also many good workers left the company. These are the people the company should have retained. 
+
+We define that the people who received an evaluation above average, or spent at least four years in the company, or worked on more than 5 projects are "good employees". We will apply this definition in later analysis.
+
+Now, let's dive deeper into the data.
+
+##Data setup
+```{r}
+str(HR)
+summary(HR)
+```
+
+From the structure and summary of our dataset, we can find that *Work_accident*, *left* *promotion_last_5years*, *salary*,and *sales* should be factors variables. Therefore, we converted them into corrected form and eliminated them in variable correlation plot.
+
+```{r,echo=FALSE, fig.width=8, fig.height=5}
+library(corrplot)
+corrplot(cor(HR[,c(1:5,7)]), order = "hclust", tl.col='black', tl.cex=.75,method = "number")
+```
+
+From the correlation plot, we can see that there is no strong correlation between any of two variables.
+
+##Principle Component Analysis
+
+Now we want to know what the key components of our numeric variables are. These components may lead us to the deeper layer of our data.
+
+```{r,echo=FALSE}
+HR$Work_accident<-as.factor(HR$Work_accident)
+HR$promotion_last_5years<-as.factor(HR$promotion_last_5years)
+HR$left<-as.factor(HR$left)
+hr <- HR[which(HR$left ==1),]
+HRPC<-prcomp(hr[,c(1:5)],center = TRUE, scale = TRUE)
+```
+
+```{r,echo=FALSE}
+HRPC
+```
+
+The 1st PC is combination of *satisfaction_level*, *last_evaluation*, *number_project*, *average_montly_hours*, and *time_spend_company*.Employees who are above average on *satisfaction_level*, *last_evaluation*, *number_project*, *average_montly_hours*, and *time_spend_company* tend to have high score on PC1. Employees who are below average on *satisfaction_level*, *last_evaluation*, *number_project*, *average_montly_hours*, and *time_spend_company* tend to have low score on PC1. We can imply that PC1 is overall fitness of the employee to the company. if the employee fits the company well and very is valuable to the company, they tend to have higher score.
+
+The 2nd PC is the contrast between *satisfaction_level*, *last_evaluation*, *time_spend_company*,  and *number_project*, *average_montly_hours*. Employees with high PC2 score do below average on *number_project*, *average_montly_hours* but do above average on  *satisfaction_level*, *last_evaluation*, *time_spend_company*. Employees with low PC2 score do above average on *number_project*, *average_montly_hours* but do below average on  *satisfaction_level*, *last_evaluation*, *time_spend_company*. We can imply that PC2 is related to work-life balance of the employee. Working long hours and doing more projects reduce the satisfaction level of the employee.
+
+The cumulative percentage of variance explained by one more lambda is:
+
+```{r,echo=FALSE}
+cumsum((HRPC$sdev)^2/sum((HRPC$sdev)^2))
+```
+
+From the cumulative sum of variance explained by each component we can conclude that in order to achieve the goal of "> 90% variance explained by PC" we need to keep 2 out of 5 PCs.It implies that there are 2 major components drive the dataset.
+
+```{r, echo=FALSE,fig.width=10, fig.height=5}
+plot(HRPC$sdev^2, xaxt = "n", main = "Scree plot", xlab = "principal component", ylab = "Variance", ylim=c(0,4),pch = 16, bty = "n")
+axis(1, at = c(1:5), labels = c(expression(lambda[1]), expression(lambda[2]), expression(lambda[3]),expression(lambda[4]),expression(lambda[5])))
+lines(HRPC$sdev^2, lty = 19)
+```
+
+We normally keep the number of PCs that has variance greater than 1. There are 2 components have a variance value greater than 1. Moreover, we also see an obvious elbow point at the 2nd PC on the scree plot. It confirms the conclusion we draw previously which 2PCs are significant for the dataset.
+
+###cluster analysis on first two PC
+
+```{r,echo=FALSE,fig.width=10, fig.height=5}
+predicthr<-as.data.frame(predict(HRPC,newdata = hr[,c(1:5)]))
+set.seed(30)
+predictcluster<-kmeans(predicthr,3,nstart = 20)
+predictcluster$cluster<-as.factor(predictcluster$cluster)
+ggplot(data=predicthr,mapping=aes(x=PC1,y=PC2,colour=predictcluster$cluster))+geom_point(shape=1)+ggtitle("Clusters of churned employees(ncluster=3)")+theme(plot.title = element_text(hjust = 0.5))
+```
+
+There are 3 Groups of people:1st group has very high PC1 score and low PC2 score. 2nd group has
+very  high PC2 score and low PC1 score. 3rd group has high PC1 score and high PC2 score. Therefore, we can imply that the 1st group is the group of people who is very valuable to the company because they sacrified their work-life balance and devoted their time to the company, the 2nd group is the group of people who are new to the company, the 3rd group of people is someone who really fit the company. They enjoyed their work and performed well.
+
+##Factor Analysis
+
+Here we try to perform factor analysis to see if we can discover similar patterns that we have right now.
+
+```{r,echo=FALSE}
+hr$salary<-as.factor(as.numeric(hr$salary))
+fit <- factanal(hr[,c(1:5)], 2, rotation="varimax")
+fit
+```
+
+We can see that first factor is dominated by *last_evaluation*, *number_project*, *average_montly_hours*, and *time_spend_company*, which implies that these employees are very valuable to the company. The second factor is donminated by *satisfaction_level*. Here we can suspect that the most important driver of employement is employee satisfaction vs employees' value to the company. 
+
+```{r,echo=FALSE,fig.width=10, fig.height=5}
+library(psy)
+scree.plot(fit$correlation)
+```
+
+We here confirm again that 2 hiden factors is driving the employement.
+
+logistic regression is also useful for factor analysis, let's do it on which factors affect whether or not an employee leaves the most.
+
+```{r,echo=FALSE}
+hr$left<-as.factor(hr$left)
+log.reg <- glm(left~., data = hr, family = binomial (link = "logit"))
+summary(log.reg)
+```
+
+Number of Fisher Scoring iterations: 5
+ 
+The only variables with p-values less than .05 come from factor levels of the department.  Of the factor levels of department, only departments from management and research and development have estimates that are significant on a 95% level.  Because these two departments have means that differ the most from the overall mean, it makes sense that only these two departments seem to have a significant effect on whether or not an employee leaves.
+
+
+##Classification And Regression Tree (CART) and Random forest model (RFM)
+
+Now lets use our knowledges that we gain from previous analysis to perform predictions.
+
+####CART
+
+First, a single decision tree using rpart; this can give an idea of the splits in the
+prediction of attrition from the company.This analysis looks only at the high performers(good people), which is defined as last_evaluation >= 0.70 or time_spend_company >= 4 or number_project > 5, and CART runs on a subset of the dataset using only employees whose last evaluation was >= 0.70, time spent at the company was >= 4, and number of projects > 5.
+
+```{r include=FALSE, cache=FALSE}
+library(randomForest)
+library(rattle)
+library(dplyr)
+```
+
+```{r,echo=FALSE,warning=FALSE,error=FALSE}
+hr <- read.csv("HR_comma_sep.csv")
+hr$Work_accident <- as.factor(hr$Work_accident)
+hr$left <- as.factor(hr$left)
+levels(hr$left) <- c("Not left", "Left")
+hr$promotion_last_5years <- as.factor(hr$promotion_last_5years)
+hr_g <- hr %>% filter(last_evaluation >= 0.70 | time_spend_company >= 4 | number_project > 5)
+model <- rpart(left ~ ., data = hr_g)
+fancyRpartPlot(model, sub ="")
+```
+
+The decision tree shows that low satisfaction level is a good predictor of a high performer leaving the company. We can see that those high performers with satisfaction levels below 0.11 and last evaluation less than 0.81 were highly likely to leave. High performers that have time spent less than 4.5 years in the company are unlikely to be at risk of leaving. For some high performers who already had high satisfaction levels (>0.71), risk of leaving the company was related to having worked a high average number of monthly hours (>216), and a large number of projects (>3.5).
+
+####RFM
+
+Using the full dataset, this analysis will provide the factors most influencing why people leave this company (all performance levels are analyzed)
+
+#####Model
+```{r,echo=FALSE}
+## Data prep - Random train and test sets
+(nobs <- nrow(hr))
+training <- hr[sample(nrow(hr), 0.6*nobs), ]
+testing <- setdiff(hr, training)
+## Build random forest model
+model <- randomForest(left ~ ., data=training)
+print(model);
+```
+```{r}
+tbl<-importance(model);
+tbl
+```
+
+Satisfaction level is the strongest predictor of who will leave the company. This is corroborated by a decision tree (not pictured) showing one of the most important criteria to be classified as leaving the company is satisfaction levels below 0.46. In addition, those who had more than 2.5 projects were more likely to leave the company. Lastly, time spent in the company less than 4.5 was a strong predictor of not leaving.
+
+```{r,echo=FALSE,fig.width=8, fig.height=5}
+plot(model)
+```
+
+The plot of the model above shows that the large number of trees used in the RFM helped to lower the prediction error rate for "left" the company (green), out-of-bag (OOB) error (black), and "not left" the company (red). The most important variables output by the RFM have provided a description of which factors influence classification as "left" the most. Clearly satisfaction level is important.
+
+###### Predictions
+```{r}
+# Confusion Matrix
+pred<-predict(model, testing, type="response")
+conf.mat<-print(table(testing$left,pred),1)
+```
+
+From the confusion matrix above, we can conclude that this RFM has high accuracy in predicting who is going to leave the company. 
+
+#**Conclusion**
+For all employees, including high performers, a low satisfaction level is a strong predictor of quitting, as is having spent less time in the company. High performers are also noticeably influenced by having high average monthly hours and a high number of projects in leaving the company.
+
+
+* The satisfaction level is the major parameter to determine if an employee stay with the company.
+* Salary is a big influence factor in determing employee satisfaction level and whether they left the company.
+* Time is a significant impact. Employee want to stay with company, not doing excessive high pressure overtimes. Employees with 3-4 projects assigned tend to stay. It shows that they are providing value to the company but by not doing too many project to ruin their work-life balance.
+
+why do good people leave?
+For the employees that the company may want to retain, there are a few red flags that they might leave:
+
+* They are not satisfied with their job, which is affected by a few things like:
+    + They work too much or too little. 
+    + They are not working on diversified projects (less than 3 projects)
+* They have been with company about 3 or 4 years, and is looking for a change for either personal reason or they just get tired of the company.
+* There seems to be a relationship between an employee's performance and their happiness. A constant review and updating for the process of evaluation will likely benefit the company in retaining its employees.
+
+So at the end, from all the analysis we have above, it may seem straightforward for the company to predict who is leaving. if the company can pay more salary to the high performers, have them do some interesting projects (not too many), while let them keep a good work-life balance, those high performers will mostlikely stay and grow with company.However, since our data is simulated by nature, in the real world, we still need to aquire more information and have diversified methods to keep good employees happy. 
